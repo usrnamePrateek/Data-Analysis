@@ -1,0 +1,212 @@
+---
+title: "Data analysis for cyclistic case study"
+output: html_document
+Last updated: "5th November 2023"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(repos = c(R = "https://cran.r-project.org"))
+```
+<br>
+  
+### Primary goal of this analysis:
+How do annual members and casual riders use Cyclistic bikes differently?
+
+
+```{r, include = FALSE}
+# Loading the libraries
+install.packages('tidyverse')
+install.packages('sets')
+library(tidyverse)
+library(sets)
+```
+  
+<br>
+  
+
+#### Loading the dataset
+```{r file paths}
+# FILE PATHS
+DATA_FILE_PATH <- '../output/process/processed_dataset.csv'
+FILE_OUT_PATH <- '../output/analyse/'
+
+df <- read_csv(DATA_FILE_PATH)
+```
+- The dataset has over __5 million__ observations and __13 attributes__
+  
+<br>
+  
+#### Overview of the dataset
+```{r}
+  head(df)
+```
+<br>
+  
+#### Renaming the columns
+```{r}
+df <- rename(df, bike_type = rideable_type,
+                 start_time = started_at,
+                 end_time = ended_at,
+                 member_type = member_casual
+            )
+```
+<br>
+  
+#### Adding a few new columns
+- __ride_length__: difference between end_time and start_time
+- __day_of_the_week__: day of the week for start_time
+
+```{r}
+df <- mutate(df, ride_length = as.numeric(difftime(end_time, start_time)),
+                 day_of_the_week = format(start_time,'%A'))
+```
+<br>
+  
+#### Changing categorical variables to factors
+```{r}
+df$bike_type <- factor(df$bike_type)
+df$member_type <- factor(df$member_type)
+df$start_station_name <- factor(df$start_station_name)
+df$end_station_name <- factor(df$end_station_name)
+
+# day of the week needs to be ordered too (useful while sorting)
+df$day_of_the_week <- factor(df$day_of_the_week, 
+                              levels=c("Sunday", "Monday", "Tuesday", 
+                                        "Wednesday", "Thursday", "Friday",
+                                       "Saturday"))
+```
+<br>
+  
+### Descriptive Analysis
+  
+#### Difference in bike_type used by casual riders and annual members
+```{r, message=FALSE}
+result <- summarize(group_by(df, member_type, bike_type), count_=n())
+knitr::kable(result)
+```
+- __docked_bike__ seems to be used by only casual members
+  
+  
+<br>
+  
+  
+#### Ride length central tendencies (in seconds)
+```{r}
+summary(df$ride_length)
+```
+<br>
+  
+#### Compare members and casual users
+```{r}
+result <- summarize(group_by(df, member_type),
+          mean_ride_len = mean(ride_length),
+          max_ride_len = max(ride_length),
+          min_ride_len = min(ride_length),
+          median_ride_len = median(ride_length))
+
+knitr::kable(result)
+```
+- Average ride length for __casual__ riders __is more than twice__ as compared to __annual__ members
+  
+  
+<br>
+  
+
+#### Number of rides by the day of the week
+```{r, message=FALSE}
+result <- arrange(summarize(group_by(df, member_type, day_of_the_week), no_of_rides = n()), day_of_the_week)
+
+# plot
+ggplot(result, aes(x = day_of_the_week, y = no_of_rides, fill=member_type, group=member_type)) + 
+  geom_col(position = "dodge")+
+  geom_line(aes(y = no_of_rides), color = "black", position = position_dodge(width=1), linewidth = 0.3) +
+  geom_point(position = position_dodge(width=1), show.legend=FALSE) + 
+  scale_y_continuous(labels = scales::number_format(scale = 1e-3, suffix = "k")) +
+  labs(title = "No. of rides each day of the week", x='Day of the week', y='No. of rides')
+```
+  
+- casual riders use cyclistic more __closer to the weekend__
+- annual member use cyclistic more __during the business days__
+  
+  
+<br>
+  
+
+#### Average ride length by day of the week
+```{r, message=FALSE}
+result <- summarize(group_by(df, member_type, day_of_the_week),
+                    mean_ride_length = mean(ride_length))
+
+# plot
+ggplot(result, 
+       aes(x = day_of_the_week, y = mean_ride_length / 60, 
+           color = member_type, group = member_type)) + 
+  geom_line() + 
+  geom_point(show.legend=FALSE) + 
+  labs(title = "Mean ride length each day of the week", x = "Day of the week",
+       y = "Mean ride length (in mins)") + 
+  scale_y_continuous(
+    breaks = seq(0, 40, by = 5),
+    labels = seq(0, 40, by = 5)
+  ) +
+  expand_limits(y = 0)
+  
+```
+
+- __Casual__ riders use cyclistic __atleast twice as much__ as __annual__ members everyday. 
+- The average ride length gradually __decreases__ as we get into the week and __increases__ as we reach the weekend
+  
+  
+<br>
+  
+#### Average ride length by month
+```{r, message=FALSE}
+result <- summarize(group_by(df, member_type, format(start_time, '%m')), mean_=mean(ride_length))
+
+colnames(result) <- c('member_type', 'month', 'mean_ride_length')
+
+# plot
+ggplot(result, aes( x = month, y = mean_ride_length / 60, 
+                    color = member_type, group = member_type)) +
+  geom_line() + 
+  geom_point(show.legend = FALSE) +
+  scale_y_continuous(
+    breaks = seq(0, 40, by = 5),
+    labels = seq(0, 40, by = 5)
+  ) + 
+  scale_x_discrete(
+    labels = c('Jan',"Feb",'Mar',"Apr","May","Jun","Jul","Aug","Sep","Oct")
+  ) +
+  labs(title='Average ride length by each month', x = 'Month', y = 'Average ride length (in mins)') + 
+  expand_limits(y=0)
+```
+<br>
+  
+  
+#### Number of rides by month
+```{r, message=FALSE}
+result <- summarize(group_by(df, member_type, format(start_time, '%m')), no_=n())
+
+colnames(result) <- c('member_type', 'month', 'no_of_rides')
+
+# plot
+ggplot(result, aes( x = month, y = no_of_rides, 
+                    color = member_type, group = member_type)) +
+  geom_line() + 
+  geom_point(show.legend = FALSE) +
+  scale_y_continuous(
+    breaks = seq(0, 500000, 50000),
+    labels = scales::number_format(scale = 1e-3, suffix = "k")
+  ) +
+  scale_x_discrete(
+    labels = c('Jan',"Feb",'Mar',"Apr","May","Jun","Jul","Aug","Sep","Oct") 
+  ) +
+  labs(title='No. of rides by each month', x = 'Month', y = 'No. of rides') + 
+  expand_limits(y=0)
+```
+
+- __Spring__ and __Summer__ are the best seasons for both casual riders and annual members
+  
+  
+<br>
